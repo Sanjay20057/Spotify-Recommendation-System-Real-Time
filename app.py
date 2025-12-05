@@ -54,10 +54,8 @@ st.markdown(
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
     client_id="bb2e467e77ad40ec9cd5c275c2a423bf",
     client_secret="6fe5ea1bb3cc425db4f209141b265705",
-    redirect_uri="https://spotify-recommendation-system-real-time.streamlit.app/",
+    redirect_uri="https://spotify-recommendation-system-real-time.streamlit.app/callback",
     scope="user-read-private user-library-read user-top-read",
-    show_dialog=True,
-    cache_path=".cache"
 ))
 
 
@@ -518,6 +516,7 @@ if st.button("Search") and song.strip():
                         unsafe_allow_html=True
                     )
                     st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
