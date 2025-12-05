@@ -5,6 +5,11 @@ from spotipy.oauth2 import SpotifyOAuth
 import base64
 import os
 
+params = st.query_params
+if "code" in params:
+    st.session_state["auth_code"] = params["code"]
+    st.success("Spotify login successful.")
+
 # GIF BACKGROUND
 def add_bg_gif(gif_file):
     if os.path.exists(gif_file):
@@ -54,8 +59,11 @@ st.markdown(
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
     client_id="bb2e467e77ad40ec9cd5c275c2a423bf",
     client_secret="6fe5ea1bb3cc425db4f209141b265705",
-    redirect_uri="https://spotify-recommendation-system-real-time.streamlit.app",
+    redirect_uri="https://spotify-recommendation-system-real-time.streamlit.app/callback",
     scope="user-read-private user-library-read user-top-read",
+    cache_path=".spotify_cache",
+    show_dialog=True,
+    open_browser=False
 ))
 
 
@@ -516,6 +524,7 @@ if st.button("Search") and song.strip():
                         unsafe_allow_html=True
                     )
                     st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
