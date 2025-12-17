@@ -56,7 +56,8 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
     redirect_uri=st.secrets["REDIRECT_URI"],
     scope="user-read-private user-library-read user-top-read",
     show_dialog=True,
-    cache_path=".cache"
+    cache_path=".cache",
+    open_browser=False
 ))
 
 # ARTIST SEARCH
@@ -567,3 +568,4 @@ if st.button("Search") and song.strip():
                     st.write(f"Artist: {artist}")
                     st.markdown(spotify_album_tracks_player(album_id), unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
+
