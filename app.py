@@ -5,11 +5,6 @@ from spotipy.oauth2 import SpotifyOAuth
 import base64
 import os
 
-params = st.query_params
-if "code" in params:
-    st.session_state["auth_code"] = params["code"]
-    st.success("Spotify login successful.")
-
 # GIF BACKGROUND
 def add_bg_gif(gif_file):
     if os.path.exists(gif_file):
@@ -53,19 +48,16 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# -----------------------------
 # SPOTIFY AUTH
-# -----------------------------
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
-    client_id="ENTER YOUR CLIENT_ID",
-    client_secret="ENTER YOUR CLIENT_SECRET",
-    redirect_uri="https://spotify-recommendation-system-real-time.streamlit.app/callback",
-    scope="user-read-private user-library-read user-top-read",
-    cache_path=".spotify_cache",
-    show_dialog=True,
-    open_browser=False
-))
 
+sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+    client_id=st.secrets["CLIENT_ID"],
+    client_secret=st.secrets["CLIENT_SECRET"],
+    redirect_uri=st.secrets["REDIRECT_URI"],
+    scope="user-read-private user-library-read user-top-read",
+    show_dialog=True,
+    cache_path=".cache"
+))
 
 # ARTIST SEARCH
 def get_clean_artist_result(query):
@@ -94,6 +86,48 @@ def get_clean_artist_result(query):
 
     # 4️⃣ Fallback — highest popularity
     return sorted(artists, key=lambda x: x["popularity"], reverse=True)[0]
+
+def spotify_player(track_id):
+    return f"""
+    <iframe
+        src="https://open.spotify.com/embed/track/{track_id}?theme=0"
+        width="100%"
+        height="80"
+        frameborder="0"
+        allow="encrypted-media"
+        style="border-radius:12px;">
+    </iframe>
+    """
+
+
+def spotify_album_player(album_id):
+    return f"""
+    <iframe
+        src="https://open.spotify.com/embed/album/{album_id}"
+        width="100%"
+        height="80"
+        frameborder="0"
+        allowtransparency="true"
+        allow="encrypted-media"
+        style="border-radius:12px; margin-top:8px;">
+    </iframe>
+    """
+def spotify_album_tracks_player(album_id):
+    album_tracks = sp.album_tracks(album_id)["items"]  # Get tracks from the album
+    players = ""
+    for track in album_tracks[:5]:  # Show first 5 tracks as embedded players
+        track_id = track["id"]
+        players += f"""
+        <iframe
+            src="https://open.spotify.com/embed/track/{track_id}?theme=0"
+            width="100%"
+            height="80"
+            frameborder="0"
+            allow="encrypted-media"
+            style="border-radius:12px; margin-top:8px;">
+        </iframe>
+        """
+    return players
 
 
 # ARTIST HEADER
@@ -175,19 +209,29 @@ def show_artist_header(song_query, results):
         for i, track in enumerate(top_tracks):
             img = track["album"]["images"][0]["url"]
             name = track["name"]
-            url = track["external_urls"]["spotify"]
+            track_id = track["id"]
 
             with cols[i]:
+                st.markdown("<div class='song-card'>", unsafe_allow_html=True)
+
                 st.markdown(
-                    f"""
-                    <div class="song-card">
-                        <img src="{img}" class="glow-img" style="width:100%;">
-                        <p class='song-title'>{name}</p>
-                        <a href="{url}" target="_blank" class="spotify-play">▶ Play</a>
-                    </div>
-                    """,
+                    f"<img src='{img}' class='glow-img' style='width:100%;'>",
                     unsafe_allow_html=True
                 )
+
+                st.markdown(
+                    f"<p class='song-title'>{name}</p>",
+                    unsafe_allow_html=True
+                )
+
+                # ✅ PLAYABLE SPOTIFY TRACK
+                st.markdown(
+                    spotify_player(track_id),
+                    unsafe_allow_html=True
+                )
+
+                st.markdown("</div>", unsafe_allow_html=True)
+
 
     except Exception as e:
         st.error(f"Artist load error: {e}")
@@ -387,6 +431,20 @@ ul[role="listbox"] li:hover {
     box-shadow: 0 0 12px #00ff66, 0 0 20px #00ff66;
 }
 
+/* -------- BIG SPOTIFY DURATION BAR -------- */
+.spotify-big {
+    overflow: hidden;
+    height: 70px;              /* BIGGER interaction area */
+    border-radius: 14px;
+    margin-top: 10px;
+    box-shadow: 0 0 10px #00ff66;
+}
+
+.spotify-big iframe {
+    margin-top: -20px;         /* Focus on controls + duration */
+    transform: scale(1.05);    /* Makes progress bar thicker */
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -424,9 +482,7 @@ if st.button("Search") and song.strip():
 
     with st.spinner("Searching Spotify..."):
 
-        # ------------------------------
-        # 1️⃣ SONG SEARCH
-        # ------------------------------
+        # SONG SEARCH
         if search_filter == "Song":
             results = sp.search(q=song, type="track", limit=10)
             tracks = results["tracks"]["items"]
@@ -457,15 +513,10 @@ if st.button("Search") and song.strip():
                     st.write(f"**Artist:** {row['artist']}")
                     st.write(f"**Album:** {row['album']}")
                     st.write(f"**Popularity:** {row['popularity']}")
-                    st.markdown(
-                        f"<a href='{row['spotify_url']}' target='_blank' class='spotify-link'>▶ Play on Spotify</a>",
-                        unsafe_allow_html=True
-                    )
+                    st.markdown(spotify_player(row["id"]), unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
 
-        # ------------------------------
-        # 2️⃣ ARTIST SEARCH
-        # ------------------------------
+        # ARTIST SEARCH
         elif search_filter == "Artist":
             artist = get_clean_artist_result(song)
 
@@ -489,15 +540,10 @@ if st.button("Search") and song.strip():
                     st.write(f"**Artist:** {row['artist']}")
                     st.write(f"**Album:** {row['album']}")
                     st.write(f"**Popularity:** {row['popularity']}")
-                    st.markdown(
-                        f"<a href='{row['spotify_url']}' target='_blank' class='spotify-link'>▶ Play on Spotify</a>",
-                        unsafe_allow_html=True
-                    )
+                    st.markdown(spotify_player(row["id"]), unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
 
-        # ------------------------------
-        # 3️⃣ ALBUM SEARCH
-        # ------------------------------
+        #ALBUM SEARCH
         elif search_filter == "Album":
             albums = sp.search(q=song, type="album", limit=10)["albums"]["items"]
 
@@ -512,24 +558,12 @@ if st.button("Search") and song.strip():
                 img = alb["images"][0]["url"] if alb["images"] else ""
                 name = alb["name"]
                 artist = alb["artists"][0]["name"]
-                url = alb["external_urls"]["spotify"]
+                album_id = alb["id"]
 
                 with cols[i % 5]:
                     st.markdown("<div class='song-card'>", unsafe_allow_html=True)
                     st.markdown(f"<img src='{img}' class='glow-img' style='width:100%;'>", unsafe_allow_html=True)
                     st.markdown(f"<p class='song-title'>{name}</p>", unsafe_allow_html=True)
                     st.write(f"Artist: {artist}")
-                    st.markdown(
-                        f"<a href='{url}' target='_blank' class='spotify-link'>▶ Open Album</a>",
-                        unsafe_allow_html=True
-                    )
+                    st.markdown(spotify_album_tracks_player(album_id), unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
-
-
-
-
-
-
-
-
-
