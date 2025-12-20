@@ -454,10 +454,12 @@ ul[role="listbox"] li:hover {
     box-shadow: 0 0 10px #00ff66;
 }
 
-.spotify-big iframe {
-    margin-top: -20px;         /* Focus on controls + duration */
-    transform: scale(1.05);    /* Makes progress bar thicker */
+.spotify-wrapper iframe {
+    width: 100%;
+    height: 90px;
+    border: none;
 }
+
 
 /* -----------------------------
      NEON SONG HEADER
@@ -682,4 +684,5 @@ if st.session_state.search_clicked and song.strip():
                     "<hr style='border:1px solid #00ff66; margin:30px 0;'>",
                     unsafe_allow_html=True
                 )
+
 
