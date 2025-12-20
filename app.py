@@ -90,6 +90,7 @@ if "album_expand" not in st.session_state:
 if "search_clicked" not in st.session_state:
     st.session_state.search_clicked = False
 
+st.session_state.is_mobile = st.get_option("browser.gatherUsageStats") is None
 
 def spotify_player(track_id):
     return f"""
@@ -196,7 +197,7 @@ def show_artist_header(song_query, results):
         top_tracks = sp.artist_top_tracks(artist["id"])["tracks"][:5]
         st.markdown("<h2 style='color:#00ff66;'>🔥 Top Tracks</h2>", unsafe_allow_html=True)
 
-        cols = st.columns(5)
+        cols = st.columns(2 if st.session_state.get("is_mobile", False) else 5)
         for i, track in enumerate(top_tracks):
             img = track["album"]["images"][0]["url"]
             name = track["name"]
@@ -423,7 +424,6 @@ ul[role="listbox"] li:hover {
     margin-bottom: 20px;
 }
 .song-card:hover {
-    transform: scale(1.03);
     box-shadow: 0 0 12px #00ff66;
 }
 
@@ -456,8 +456,7 @@ ul[role="listbox"] li:hover {
 }
 
 .spotify-big iframe {
-    margin-top: -20px;         /* Focus on controls + duration */
-    transform: scale(1.05);    /* Makes progress bar thicker */
+    margin-top: 0;
 }
 
 /* -----------------------------
@@ -514,6 +513,76 @@ ul[role="listbox"] li:hover {
     100% { box-shadow: 0 0 10px #00ff66; }
 }
 
+/* -----------------------------
+   MOBILE RESPONSIVE FIX
+------------------------------ */
+@media (max-width: 768px) {
+
+    /* Artist banner */
+    .artist-banner {
+        flex-direction: column;
+        text-align: center;
+        padding: 18px;
+    }
+
+    .artist-img {
+        width: 110px;
+        height: 110px;
+    }
+
+    .artist-name {
+        font-size: 28px;
+    }
+
+    .artist-meta {
+        font-size: 14px;
+    }
+
+    /* Neon song header */
+    .neon-song-header {
+        flex-direction: column;
+        gap: 12px;
+        padding: 15px;
+    }
+
+    .neon-song-header img {
+        width: 120px;
+        height: 120px;
+    }
+
+    .neon-song-info .title {
+        font-size: 20px;
+        text-align: center;
+    }
+
+    .neon-song-info .artist {
+        font-size: 14px;
+        text-align: center;
+    }
+
+    /* Song cards */
+    .song-card {
+        padding: 12px;
+    }
+
+    .song-title {
+        font-size: 16px;
+        text-align: center;
+    }
+
+    /* Spotify iframe fix */
+    iframe {
+        height: 80px !important;
+    }
+}
+
+/* Force Streamlit columns to stack on mobile */
+@media (max-width: 768px) {
+    div[data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -577,7 +646,7 @@ if st.session_state.search_clicked and song.strip():
             df, res = search_top_10(song)
             st.success(f"Showing top {len(df)} similar songs 🎶")
 
-            cols = st.columns(5)
+            cols = st.columns(2 if st.session_state.get("is_mobile", False) else 5)
             for i, row in df.iterrows():
                 with cols[i % 5]:
                     st.markdown("<div class='song-card'>", unsafe_allow_html=True)
@@ -603,7 +672,7 @@ if st.session_state.search_clicked and song.strip():
             df, res = search_top_10(song)
             st.success(f"Showing top {len(df)} similar songs 🎶")
 
-            cols = st.columns(5)
+            cols = st.columns(2 if st.session_state.get("is_mobile", False) else 5)
             for i, row in df.iterrows():
                 with cols[i % 5]:
                     st.markdown("<div class='song-card'>", unsafe_allow_html=True)
