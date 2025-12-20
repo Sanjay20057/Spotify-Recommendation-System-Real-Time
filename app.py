@@ -93,14 +93,13 @@ if "search_clicked" not in st.session_state:
 
 def spotify_player(track_id):
     return f"""
-    <iframe
-        src="https://open.spotify.com/embed/track/{track_id}?theme=0"
-        width="100%"
-        height="80"
-        frameborder="0"
-        allow="encrypted-media"
-        style="border-radius:12px;">
-    </iframe>
+    <div class="spotify-wrapper">
+        <iframe
+            src="https://open.spotify.com/embed/track/{track_id}?theme=0"
+            allow="encrypted-media"
+            loading="lazy">
+        </iframe>
+    </div>
     """
 
 def spotify_album_tracks_player(album_id):
@@ -514,6 +513,24 @@ ul[role="listbox"] li:hover {
     100% { box-shadow: 0 0 10px #00ff66; }
 }
 
+/* -----------------------------
+   SPOTIFY EMBED FIX
+------------------------------ */
+
+.spotify-wrapper {
+    width: 100%;
+    height: 90px;
+    margin-top: 10px;
+    overflow: hidden;
+    border-radius: 14px;
+    box-shadow: 0 0 10px #00ff66;
+}
+
+.spotify-wrapper iframe {
+    width: 100%;
+    height: 90px;
+    border: none;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -665,3 +682,4 @@ if st.session_state.search_clicked and song.strip():
                     "<hr style='border:1px solid #00ff66; margin:30px 0;'>",
                     unsafe_allow_html=True
                 )
+
