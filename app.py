@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
+from spotipy.oauth2 import SpotifyClientCredentials
 import base64
 import os
 
@@ -49,16 +49,12 @@ st.markdown(
 )
 
 # SPOTIFY AUTH
-
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
-    client_id=st.secrets["CLIENT_ID"],
-    client_secret=st.secrets["CLIENT_SECRET"],
-    redirect_uri=st.secrets["REDIRECT_URI"],
-    scope="user-read-private user-library-read user-top-read",
-    show_dialog=True,
-    cache_path=".cache",
-    open_browser=False
-))
+sp = spotipy.Spotify(
+    auth_manager=SpotifyClientCredentials(
+        client_id=st.secrets["CLIENT_ID"],
+        client_secret=st.secrets["CLIENT_SECRET"]
+    )
+)
 
 # ARTIST SEARCH
 def get_clean_artist_result(query):
@@ -88,6 +84,13 @@ def get_clean_artist_result(query):
     # 4️⃣ Fallback — highest popularity
     return sorted(artists, key=lambda x: x["popularity"], reverse=True)[0]
 
+if "album_expand" not in st.session_state:
+    st.session_state.album_expand = {}
+
+if "search_clicked" not in st.session_state:
+    st.session_state.search_clicked = False
+
+
 def spotify_player(track_id):
     return f"""
     <iframe
@@ -100,19 +103,6 @@ def spotify_player(track_id):
     </iframe>
     """
 
-
-def spotify_album_player(album_id):
-    return f"""
-    <iframe
-        src="https://open.spotify.com/embed/album/{album_id}"
-        width="100%"
-        height="80"
-        frameborder="0"
-        allowtransparency="true"
-        allow="encrypted-media"
-        style="border-radius:12px; margin-top:8px;">
-    </iframe>
-    """
 def spotify_album_tracks_player(album_id):
     album_tracks = sp.album_tracks(album_id)["items"]  # Get tracks from the album
     players = ""
@@ -246,15 +236,39 @@ def show_song_header(track):
 
         st.markdown(f"""
             <h2 style='color:#00ff66;'>🎵 Song Result</h2>
-            <div class="song-card">
-                <img src="{img}" class="glow-img" style="width:200px;">
-                <p class="song-title">{song_name}</p>
-                <p style="color:white;">Artist: {artist_name}</p>
+            <div class="neon-song-header">
+                <img src="{img}">
+                <div class="neon-song-info">
+                    <div class="title">{song_name}</div>
+                    <div class="artist">Artist: {artist_name}</div>
+                </div>
             </div>
         """, unsafe_allow_html=True)
 
+        st.markdown(spotify_player(track["id"]), unsafe_allow_html=True)
+
     except Exception as e:
         st.error(f"Song header error: {e}")
+
+def show_album_header(album):
+    img = album["images"][0]["url"] if album["images"] else ""
+    name = album["name"]
+    artist = album["artists"][0]["name"]
+
+    # total tracks (comes directly from album object)
+    total_tracks = album.get("total_tracks", "N/A")
+
+    st.markdown(f"""
+    <div class="neon-song-header">
+        <img src="{img}">
+        <div class="neon-song-info">
+            <div class="title">{name}</div>
+            <div class="artist">Artist: {artist}</div>
+            <div class="artist">Tracks: {total_tracks} songs</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 
 # SEARCH FUNCTION
 def search_top_10(song_name):
@@ -446,6 +460,60 @@ ul[role="listbox"] li:hover {
     transform: scale(1.05);    /* Makes progress bar thicker */
 }
 
+/* -----------------------------
+     NEON SONG HEADER
+------------------------------ */
+.neon-song-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 20px;
+    border: 2px solid #00ff66;
+    border-radius: 18px;
+    background-color: rgba(17, 17, 17, 0.85);
+    box-shadow: 0 0 25px #00ff66;
+    animation: neon-glow 1.5s ease-in-out infinite alternate;
+    margin-bottom: 20px;
+}
+
+.neon-song-header img {
+    width: 150px;
+    height: 150px;
+    border-radius: 12px;
+    border: 3px solid #00ff66;
+    box-shadow: 0 0 15px #00ff66;
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.neon-song-header img:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 25px #00ff66;
+}
+
+.neon-song-info {
+    display: flex;
+    flex-direction: column;
+    color: white;
+}
+
+.neon-song-info .title {
+    font-size: 26px;
+    font-weight: bold;
+    color: #00ff66;
+    margin-bottom: 6px;
+}
+
+.neon-song-info .artist {
+    font-size: 18px;
+    color: white;
+}
+
+@keyframes neon-glow {
+    0% { box-shadow: 0 0 10px #00ff66; }
+    50% { box-shadow: 0 0 25px #00ff66; }
+    100% { box-shadow: 0 0 10px #00ff66; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -479,7 +547,11 @@ search_filter = st.selectbox(
 )
 
 # SEARCH BUTTON
-if st.button("Search") and song.strip():
+if st.button("Search"):
+    st.session_state.search_clicked = True
+
+if st.session_state.search_clicked and song.strip():
+
 
     with st.spinner("Searching Spotify..."):
 
@@ -546,26 +618,50 @@ if st.button("Search") and song.strip():
 
         #ALBUM SEARCH
         elif search_filter == "Album":
-            albums = sp.search(q=song, type="album", limit=10)["albums"]["items"]
+
+            albums = sp.search(q=song, type="album", limit=5)["albums"]["items"]
 
             if not albums:
                 st.error("No albums found.")
                 st.stop()
 
-            st.markdown("<h2 style='color:#00ff66;'>💿 Album Results</h2>", unsafe_allow_html=True)
+            st.markdown("<h2 style='color:#00ff66;'>💿 Albums</h2>", unsafe_allow_html=True)
 
-            cols = st.columns(5)
-            for i, alb in enumerate(albums):
-                img = alb["images"][0]["url"] if alb["images"] else ""
-                name = alb["name"]
-                artist = alb["artists"][0]["name"]
-                album_id = alb["id"]
+            for album in albums:
 
-                with cols[i % 5]:
-                    st.markdown("<div class='song-card'>", unsafe_allow_html=True)
-                    st.markdown(f"<img src='{img}' class='glow-img' style='width:100%;'>", unsafe_allow_html=True)
-                    st.markdown(f"<p class='song-title'>{name}</p>", unsafe_allow_html=True)
-                    st.write(f"Artist: {artist}")
-                    st.markdown(spotify_album_tracks_player(album_id), unsafe_allow_html=True)
-                    st.markdown("</div>", unsafe_allow_html=True)
+                album_id = album["id"]
 
+                show_album_header(album)
+
+                tracks = sp.album_tracks(album_id)["items"]
+                TOTAL = len(tracks)
+                LIMIT = 5
+
+                # init state
+                if album_id not in st.session_state.album_expand:
+                    st.session_state.album_expand[album_id] = False
+
+                expanded = st.session_state.album_expand[album_id]
+
+                # decide visible tracks
+                visible_tracks = tracks if expanded else tracks[:LIMIT]
+
+                # render tracks
+                for track in visible_tracks:
+                    st.markdown(
+                        spotify_player(track["id"]),
+                        unsafe_allow_html=True
+                    )
+
+                # ---- BUTTON (THIS IS THE FIX) ----
+                if TOTAL > LIMIT:
+                    label = "➖ Show Less" if expanded else f"➕ Show More ({TOTAL - LIMIT})"
+
+                    if st.button(label, key=f"btn_{album_id}"):
+                        st.session_state.album_expand[album_id] = not expanded
+                        st.rerun()  # 🚀 THIS IS CRITICAL
+
+                st.markdown(
+                    "<hr style='border:1px solid #00ff66; margin:30px 0;'>",
+                    unsafe_allow_html=True
+                )
