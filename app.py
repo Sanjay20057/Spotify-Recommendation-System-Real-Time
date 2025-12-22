@@ -385,11 +385,16 @@ def get_clean_artist_result(query):
     # 4️⃣ Fallback — highest popularity
     return sorted(artists, key=lambda x: x["popularity"], reverse=True)[0]
 
+# Initialize session state variables
+if "selected_playlist" not in st.session_state:
+    st.session_state.selected_playlist = None
+
 if "album_expand" not in st.session_state:
     st.session_state.album_expand = {}
 
 if "search_clicked" not in st.session_state:
     st.session_state.search_clicked = False
+
 
 st.session_state.is_mobile = st.get_option("browser.gatherUsageStats") is None
 
@@ -1473,3 +1478,4 @@ if page == "Playlists":
     if st.button("⬅ Back to Playlists"):
         st.session_state.selected_playlist = None
         st.rerun()
+
