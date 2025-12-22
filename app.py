@@ -4,6 +4,307 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import base64
 import os
+import sqlite3
+import hashlib
+
+# ---------- MOBILE DETECTION ----------
+if "is_mobile" not in st.session_state:
+    st.session_state.is_mobile = st.get_option("browser.gatherUsageStats") is None
+
+# ------------------ DATABASE ------------------
+conn = sqlite3.connect("users.db", check_same_thread=False)
+c = conn.cursor()
+
+c.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT
+)
+""")
+# ---------- LIKED SONGS ----------
+c.execute("""
+CREATE TABLE IF NOT EXISTS liked_songs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    track_id TEXT,
+    track_name TEXT,
+    artist TEXT,
+    image TEXT
+)
+""")
+
+# ---------- PLAYLIST ----------
+c.execute("""
+CREATE TABLE IF NOT EXISTS playlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    playlist_name TEXT,
+    track_id TEXT,
+    track_name TEXT,
+    artist TEXT,
+    image TEXT
+)
+""")
+
+# ---------- USER PROFILE ----------
+c.execute("""
+CREATE TABLE IF NOT EXISTS user_profile (
+    username TEXT PRIMARY KEY,
+    full_name TEXT,
+    bio TEXT,
+    image BLOB
+)
+""")
+conn.commit()
+
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def signup_user(username, password):
+    try:
+        c.execute(
+            "INSERT INTO users (username, password) VALUES (?, ?)",
+            (username, hash_password(password))
+        )
+        conn.commit()
+        return True
+    except:
+        return False
+
+def login_user(username, password):
+    c.execute(
+        "SELECT * FROM users WHERE username=? AND password=?",
+        (username, hash_password(password))
+    )
+    return c.fetchone()
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    st.markdown('<div class="login-card">', unsafe_allow_html=True)
+    st.markdown("<h1>🎧 Welcome to Neon Spotify</h1>", unsafe_allow_html=True)
+
+    auth_mode = st.radio("Choose Action", ["Login", "Sign Up"], horizontal=True)
+
+    username = st.text_input("Username", placeholder="Enter username")
+    password = st.text_input("Password", type="password", placeholder="Enter password")
+
+    if auth_mode == "Sign Up":
+        if st.button("Create Account"):
+            if signup_user(username, password):
+                st.success("Account created! Please login.")
+            else:
+                st.error("Username already exists.")
+
+    if auth_mode == "Login":
+        if st.button("Login"):
+            user = login_user(username, password)
+            if user:
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.rerun()
+            else:
+                st.error("Invalid username or password")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
+
+
+def get_sidebar_profile(username):
+    c.execute(
+        "SELECT full_name, image FROM user_profile WHERE username=?",
+        (username,)
+    )
+    row = c.fetchone()
+    return row if row else ("", None)
+
+# Allow sidebar profile click to open Profile
+if "go_profile" not in st.session_state:
+    st.session_state.go_profile = False
+
+if st.session_state.go_profile:
+    page = "Profile"
+    st.session_state.go_profile = False
+
+# ---------- SIDEBAR PROFILE ----------
+full_name, profile_img = get_sidebar_profile(st.session_state.username)
+
+display_name = full_name if full_name else st.session_state.username
+username_small = f"@{st.session_state.username}"
+
+if profile_img:
+    img_base64 = base64.b64encode(profile_img).decode()
+    img_src = f"data:image/png;base64,{img_base64}"
+else:
+    img_src = "https://upload.wikimedia.org/wikipedia/commons/9/99/Sample_User_Icon.png"
+
+st.sidebar.markdown(
+    f"""
+    <style>
+    .sidebar-profile {{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        border-radius: 15px;
+        background: rgba(0, 255, 102, 0.12);
+        box-shadow: 0 0 10px #00ff66;
+        margin-bottom: 15px;
+    }}
+
+    .avatar-wrap {{
+        position: relative;
+    }}
+
+    .sidebar-profile img {{
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        border: 3px solid #00ff66;
+        box-shadow: 0 0 12px #00ff66;
+        object-fit: cover;
+    }}
+
+    .status-dot {{
+        position: absolute;
+        bottom: 4px;
+        right: 4px;
+        width: 12px;
+        height: 12px;
+        background: #00ff66;
+        border-radius: 50%;
+        border: 2px solid #0d0d0d;
+        box-shadow: 0 0 8px #00ff66;
+    }}
+
+    .sidebar-text {{
+        display: flex;
+        flex-direction: column;
+        line-height: 1.1;
+    }}
+
+    .sidebar-name {{
+        color: #00ff66;
+        font-size: 18px;
+        font-weight: 700;
+    }}
+
+    .sidebar-username {{
+        color: #aaa;
+        font-size: 12px;
+    }}
+    </style>
+
+    <div class="sidebar-profile">
+        <div class="avatar-wrap">
+            <img src="{img_src}">
+            <div class="status-dot"></div>
+        </div>
+        <div class="sidebar-text">
+            <div class="sidebar-name">{display_name}</div>
+            <div class="sidebar-username">{username_small}</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+page = st.sidebar.radio(
+    "Menu",
+    ["Search Music", "Liked Songs", "Playlists", "Profile"],
+    key="main_menu"
+)
+
+if st.sidebar.button("Logout"):
+    st.session_state.logged_in = False
+    st.rerun()
+
+def like_song(username, track):
+    c.execute("""
+        INSERT OR IGNORE INTO liked_songs
+        (username, track_id, track_name, artist, image)
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        username,
+        track["id"],
+        track["name"],
+        track["artists"][0]["name"],
+        track["album"]["images"][0]["url"]
+    ))
+    conn.commit()
+
+
+def is_song_liked(username, track_id):
+    c.execute(
+        "SELECT 1 FROM liked_songs WHERE username=? AND track_id=?",
+        (username, track_id)
+    )
+    return c.fetchone() is not None
+
+
+def unlike_song(username, track_id):
+    c.execute(
+        "DELETE FROM liked_songs WHERE username=? AND track_id=?",
+        (username, track_id)
+    )
+    conn.commit()
+
+
+def add_to_playlist(username, playlist, track):
+    c.execute("""
+        INSERT INTO playlists
+        (username, playlist_name, track_id, track_name, artist, image)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        username,
+        playlist,
+        track["id"],
+        track["name"],
+        track["artists"][0]["name"],
+        track["album"]["images"][0]["url"]
+    ))
+    conn.commit()
+
+def remove_from_playlist(username, playlist_name, track_id):
+    c.execute(
+        "DELETE FROM playlists WHERE username=? AND playlist_name=? AND track_id=?",
+        (username, playlist_name, track_id)
+    )
+    conn.commit()
+
+def get_profile(username):
+    c.execute(
+        "SELECT full_name, bio, image FROM user_profile WHERE username=?",
+        (username,)
+    )
+    return c.fetchone()
+
+def save_profile(username, full_name, bio, image_bytes):
+    c.execute("""
+        INSERT INTO user_profile (username, full_name, bio, image)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(username) DO UPDATE SET
+        full_name=excluded.full_name,
+        bio=excluded.bio,
+        image=excluded.image
+    """, (username, full_name, bio, image_bytes))
+    conn.commit()
+
+def spotify_playlist_player(track_ids):
+    ids = ",".join(track_ids)
+    return f"""
+    <iframe
+        src="https://open.spotify.com/embed/playlist/{ids}"
+        width="100%"
+        height="380"
+        frameborder="0"
+        allow="encrypted-media"
+        style="border-radius:14px;">
+    </iframe>
+    """
 
 # GIF BACKGROUND
 def add_bg_gif(gif_file):
@@ -93,11 +394,12 @@ if "search_clicked" not in st.session_state:
 st.session_state.is_mobile = st.get_option("browser.gatherUsageStats") is None
 
 def spotify_player(track_id):
+    height = 80 if st.session_state.is_mobile else 80
     return f"""
     <iframe
         src="https://open.spotify.com/embed/track/{track_id}?theme=0"
         width="100%"
-        height="80"
+        height="{height}"
         frameborder="0"
         allow="encrypted-media"
         style="border-radius:12px;">
@@ -583,154 +885,591 @@ ul[role="listbox"] li:hover {
         flex: 1 1 100% !important;
     }
 }
+
+@media (max-width: 768px){
+    /* Stack song cards */
+    .song-card { padding: 10px; }
+    .song-title { font-size: 16px; }
+
+    /* Neon song header */
+    .neon-song-header { flex-direction: column; gap:12px; padding:15px; }
+    .neon-song-header img { width: 120px; height: 120px; }
+    .neon-song-info .title { font-size: 18px; text-align:center; }
+    .neon-song-info .artist { font-size: 14px; text-align:center; }
+
+    /* Playlist cards */
+    div.playlist-card { width: 100% !important; max-width: 320px; }
+
+    /* Sidebar */
+    .sidebar-profile { flex-direction: column; align-items:center; text-align:center; }
+    .sidebar-name { font-size:16px; }
+    .sidebar-username { font-size:12px; }
+
+    /* Buttons */
+    .stButton>button { width:100%; margin-bottom:8px; }
+
+    /* Inputs */
+    div[data-baseweb="input"] > div:first-child { width:100% !important; }
+
+    /* Iframes */
+    iframe { width:100% !important; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
-
-# SEARCH INPUT
-st.write("### Search any Song, Album or Artist")
-song = st.text_input("Enter song, artist, or album:")
-
-# Detect if user searched song or artist
-def detect_search_type(query):
-    res = sp.search(q=query, type="track,artist", limit=3)
-
-    tracks = res.get("tracks", {}).get("items", [])
-    artists = res.get("artists", {}).get("items", [])
-
-    if tracks:
-        return "song", tracks[0]
-    elif artists:
-        return "artist", artists[0]
-    else:
-        return None, None
-
-def is_artist_query(q):
-    artist = get_clean_artist_result(q)
-    return artist is not None
-
-# FILTER OPTION
-search_filter = st.selectbox(
-    "Choose what you want to search:",
-    ["Song", "Artist", "Album"]
-)
-
-# SEARCH BUTTON
-if st.button("Search"):
-    st.session_state.search_clicked = True
-
-if st.session_state.search_clicked and song.strip():
+if page == "Search Music":
+    # SEARCH INPUT
+    st.write("### Search any Song, Album or Artist")
+    song = st.text_input("Enter song, artist, or album:")
 
 
-    with st.spinner("Searching Spotify..."):
+    # Detect if user searched song or artist
+    def detect_search_type(query):
+        res = sp.search(q=query, type="track,artist", limit=3)
 
-        # SONG SEARCH
-        if search_filter == "Song":
-            results = sp.search(q=song, type="track", limit=10)
-            tracks = results["tracks"]["items"]
+        tracks = res.get("tracks", {}).get("items", [])
+        artists = res.get("artists", {}).get("items", [])
 
-            if not tracks:
-                st.error("No songs found.")
-                st.stop()
+        if tracks:
+            return "song", tracks[0]
+        elif artists:
+            return "artist", artists[0]
+        else:
+            return None, None
 
-            # Show first song header
-            show_song_header(tracks[0])
 
-            # Show all artists of the song
-            st.markdown("<h2 style='color:#00ff66;'>🎤 Artist(s)</h2>", unsafe_allow_html=True)
-            for art in tracks[0]["artists"]:
-                artist_full = sp.artist(art["id"])
-                show_artist_header(artist_full["name"], results)
+    def is_artist_query(q):
+        artist = get_clean_artist_result(q)
+        return artist is not None
 
-            # Recommendation list (your table)
-            df, res = search_top_10(song)
-            st.success(f"Showing top {len(df)} similar songs 🎶")
 
-            cols = st.columns(2 if st.session_state.get("is_mobile", False) else 5)
-            for i, row in df.iterrows():
-                with cols[i % 5]:
-                    st.markdown("<div class='song-card'>", unsafe_allow_html=True)
-                    st.markdown(f"<img src='{row['image']}' class='glow-img' style='width:100%;'>", unsafe_allow_html=True)
-                    st.markdown(f"<p class='song-title'>{row['track_name']}</p>", unsafe_allow_html=True)
-                    st.write(f"**Artist:** {row['artist']}")
-                    st.write(f"**Album:** {row['album']}")
-                    st.write(f"**Popularity:** {row['popularity']}")
-                    st.markdown(spotify_player(row["id"]), unsafe_allow_html=True)
-                    st.markdown("</div>", unsafe_allow_html=True)
+    # FILTER OPTION
+    search_filter = st.selectbox(
+        "Choose what you want to search:",
+        ["Song", "Artist", "Album"]
+    )
 
-        # ARTIST SEARCH
-        elif search_filter == "Artist":
-            artist = get_clean_artist_result(song)
+    # SEARCH BUTTON
+    if st.button("Search"):
+        st.session_state.search_clicked = True
 
-            if not artist:
-                st.error("No artist found.")
-                st.stop()
+    if st.session_state.search_clicked and song.strip():
 
-            show_artist_header(song_query=song, results={})
+        with st.spinner("Searching Spotify..."):
 
-            # Recommended tracks by artist
-            df, res = search_top_10(song)
-            st.success(f"Showing top {len(df)} similar songs 🎶")
+            # SONG SEARCH
+            if search_filter == "Song":
+                results = sp.search(q=song, type="track", limit=10)
+                tracks = results["tracks"]["items"]
 
-            cols = st.columns(2 if st.session_state.get("is_mobile", False) else 5)
-            for i, row in df.iterrows():
-                with cols[i % 5]:
-                    st.markdown("<div class='song-card'>", unsafe_allow_html=True)
-                    st.markdown(f"<img src='{row['image']}' class='glow-img' style='width:100%;'>",
-                                unsafe_allow_html=True)
-                    st.markdown(f"<p class='song-title'>{row['track_name']}</p>", unsafe_allow_html=True)
-                    st.write(f"**Artist:** {row['artist']}")
-                    st.write(f"**Album:** {row['album']}")
-                    st.write(f"**Popularity:** {row['popularity']}")
-                    st.markdown(spotify_player(row["id"]), unsafe_allow_html=True)
-                    st.markdown("</div>", unsafe_allow_html=True)
+                if not tracks:
+                    st.error("No songs found.")
+                    st.stop()
 
-        #ALBUM SEARCH
-        elif search_filter == "Album":
+                # Show first song header
+                show_song_header(tracks[0])
 
-            albums = sp.search(q=song, type="album", limit=5)["albums"]["items"]
+                # Show all artists of the song
+                st.markdown("<h2 style='color:#00ff66;'>🎤 Artist(s)</h2>", unsafe_allow_html=True)
+                for art in tracks[0]["artists"]:
+                    artist_full = sp.artist(art["id"])
+                    show_artist_header(artist_full["name"], results)
 
-            if not albums:
-                st.error("No albums found.")
-                st.stop()
+                # Recommendation list (your table)
+                df, res = search_top_10(song)
+                st.success(f"Showing top {len(df)} similar songs 🎶")
 
-            st.markdown("<h2 style='color:#00ff66;'>💿 Albums</h2>", unsafe_allow_html=True)
+                cols_per_row = 1 if st.session_state.is_mobile else 5  # for top tracks or search results
+                cols = st.columns(cols_per_row)
 
-            for album in albums:
+                for i, row in df.iterrows():
+                    with cols[i % 5]:
+                        st.markdown("<div class='song-card'>", unsafe_allow_html=True)
+                        st.markdown(f"<img src='{row['image']}' class='glow-img' style='width:100%;'>",
+                                    unsafe_allow_html=True)
+                        st.markdown(f"<p class='song-title'>{row['track_name']}</p>", unsafe_allow_html=True)
+                        st.write(f"**Artist:** {row['artist']}")
+                        st.write(f"**Album:** {row['album']}")
+                        st.write(f"**Popularity:** {row['popularity']}")
+                        st.markdown(spotify_player(row["id"]), unsafe_allow_html=True)
+                        col1, col2 = st.columns(2)
 
-                album_id = album["id"]
+                        with col1:
+                            liked = is_song_liked(st.session_state.username, row["id"])
 
-                show_album_header(album)
+                            if liked:
+                                if st.button("💔 Unlike", key=f"remove_{row['id']}"):
+                                    unlike_song(st.session_state.username, row["id"])
+                                    st.rerun()
+                            else:
+                                if st.button("❤️ Like", key=f"like_{row['id']}"):
+                                    like_song(st.session_state.username, {
+                                        "id": row["id"],
+                                        "name": row["track_name"],
+                                        "artists": [{"name": row["artist"]}],
+                                        "album": {"images": [{"url": row["image"]}]}
+                                    })
+                                    st.rerun()
 
-                tracks = sp.album_tracks(album_id)["items"]
-                TOTAL = len(tracks)
-                LIMIT = 5
+                        with col2:
+                            # ---- EXISTING PLAYLIST SELECT ----
+                            playlist_list = c.execute("""
+                                SELECT DISTINCT playlist_name
+                                FROM playlists
+                                WHERE username=? AND playlist_name!=''
+                            """, (st.session_state.username,)).fetchall()
 
-                # init state
-                if album_id not in st.session_state.album_expand:
-                    st.session_state.album_expand[album_id] = False
+                            playlist_names = [p[0] for p in playlist_list]
 
-                expanded = st.session_state.album_expand[album_id]
+                            if playlist_names:
+                                selected_playlist = st.selectbox(
+                                    "Add to Playlist",
+                                    playlist_names,
+                                    key=f"select_pl_{row['id']}"
+                                )
 
-                # decide visible tracks
-                visible_tracks = tracks if expanded else tracks[:LIMIT]
+                                if st.button("➕ Add", key=f"add_{row['id']}"):
+                                    add_to_playlist(
+                                        st.session_state.username,
+                                        selected_playlist,
+                                        {
+                                            "id": row["id"],
+                                            "name": row["track_name"],
+                                            "artists": [{"name": row["artist"]}],
+                                            "album": {"images": [{"url": row["image"]}]}
+                                        }
+                                    )
+                                    st.success(f"Added to '{selected_playlist}'")
+                            else:
+                                st.info("Create a playlist first")
 
-                # render tracks
-                for track in visible_tracks:
+                        st.markdown("</div>", unsafe_allow_html=True)
+
+            # ARTIST SEARCH
+            elif search_filter == "Artist":
+                artist = get_clean_artist_result(song)
+
+                if not artist:
+                    st.error("No artist found.")
+                    st.stop()
+
+                show_artist_header(song_query=song, results={})
+
+                # Recommended tracks by artist
+                df, res = search_top_10(song)
+                st.success(f"Showing top {len(df)} similar songs 🎶")
+
+                cols_per_row = 1 if st.session_state.is_mobile else 5  # for top tracks or search results
+                cols = st.columns(cols_per_row)
+
+                for i, row in df.iterrows():
+                    with cols[i % 5]:
+                        st.markdown("<div class='song-card'>", unsafe_allow_html=True)
+                        st.markdown(f"<img src='{row['image']}' class='glow-img' style='width:100%;'>",
+                                    unsafe_allow_html=True)
+                        st.markdown(f"<p class='song-title'>{row['track_name']}</p>", unsafe_allow_html=True)
+                        st.write(f"**Artist:** {row['artist']}")
+                        st.write(f"**Album:** {row['album']}")
+                        st.write(f"**Popularity:** {row['popularity']}")
+                        st.markdown(spotify_player(row["id"]), unsafe_allow_html=True)
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            liked = is_song_liked(st.session_state.username, row["id"])
+
+                            if liked:
+                                if st.button("💔 Unlike", key=f"remove_{row['id']}"):
+                                    unlike_song(st.session_state.username, row["id"])
+                                    st.rerun()
+                            else:
+                                if st.button("❤️ Like", key=f"like_{row['id']}"):
+                                    like_song(st.session_state.username, {
+                                        "id": row["id"],
+                                        "name": row["track_name"],
+                                        "artists": [{"name": row["artist"]}],
+                                        "album": {"images": [{"url": row["image"]}]}
+                                    })
+                                    st.rerun()
+
+                        with col2:
+                            # ---- EXISTING PLAYLIST SELECT ----
+                            playlist_list = c.execute("""
+                                SELECT DISTINCT playlist_name
+                                FROM playlists
+                                WHERE username=? AND playlist_name!=''
+                            """, (st.session_state.username,)).fetchall()
+
+                            playlist_names = [p[0] for p in playlist_list]
+
+                            if playlist_names:
+                                selected_playlist = st.selectbox(
+                                    "Add to Playlist",
+                                    playlist_names,
+                                    key=f"select_pl_{row['id']}"
+                                )
+
+                                if st.button("➕ Add", key=f"add_{row['id']}"):
+                                    add_to_playlist(
+                                        st.session_state.username,
+                                        selected_playlist,
+                                        {
+                                            "id": row["id"],
+                                            "name": row["track_name"],
+                                            "artists": [{"name": row["artist"]}],
+                                            "album": {"images": [{"url": row["image"]}]}
+                                        }
+                                    )
+                                    st.success(f"Added to '{selected_playlist}'")
+                            else:
+                                st.info("Create a playlist first")
+
+                        st.markdown("</div>", unsafe_allow_html=True)
+
+            # ALBUM SEARCH
+            elif search_filter == "Album":
+
+                albums = sp.search(q=song, type="album", limit=5)["albums"]["items"]
+
+                if not albums:
+                    st.error("No albums found.")
+                    st.stop()
+
+                st.markdown("<h2 style='color:#00ff66;'>💿 Albums</h2>", unsafe_allow_html=True)
+
+                for album in albums:
+
+                    album_id = album["id"]
+
+                    show_album_header(album)
+
+                    tracks = sp.album_tracks(album_id)["items"]
+                    TOTAL = len(tracks)
+                    LIMIT = 5
+
+                    # init state
+                    if album_id not in st.session_state.album_expand:
+                        st.session_state.album_expand[album_id] = False
+
+                    expanded = st.session_state.album_expand[album_id]
+
+                    # decide visible tracks
+                    visible_tracks = tracks if expanded else tracks[:LIMIT]
+
+                    # render tracks
+                    for track in visible_tracks:
+                        st.markdown(
+                            spotify_player(track["id"]),
+                            unsafe_allow_html=True
+                        )
+
+                    # ---- BUTTON (THIS IS THE FIX) ----
+                    if TOTAL > LIMIT:
+                        label = "➖ Show Less" if expanded else f"➕ Show More ({TOTAL - LIMIT})"
+
+                        if st.button(label, key=f"btn_{album_id}"):
+                            st.session_state.album_expand[album_id] = not expanded
+                            st.rerun()  # 🚀 THIS IS CRITICAL
+
                     st.markdown(
-                        spotify_player(track["id"]),
+                        "<hr style='border:1px solid #00ff66; margin:30px 0;'>",
                         unsafe_allow_html=True
                     )
 
-                # ---- BUTTON (THIS IS THE FIX) ----
-                if TOTAL > LIMIT:
-                    label = "➖ Show Less" if expanded else f"➕ Show More ({TOTAL - LIMIT})"
+if page == "Profile":
 
-                    if st.button(label, key=f"btn_{album_id}"):
-                        st.session_state.album_expand[album_id] = not expanded
-                        st.rerun()  # 🚀 THIS IS CRITICAL
+    st.markdown(
+        f"<h1 style='color:#00ff66; text-align:center;'>👤 {st.session_state.username}</h1>",
+        unsafe_allow_html=True
+    )
 
+    profile = get_profile(st.session_state.username)
+    full_name = profile[0] if profile else ""
+    bio = profile[1] if profile else ""
+    img_data = profile[2] if profile else None
+
+    # --- MAIN PROFILE LAYOUT ---
+    col1, col2 = st.columns([1,2] if not st.session_state.is_mobile else [1,1])
+
+    # -------- PROFILE IMAGE --------
+    with col1:
+        # Determine image to display
+        if img_data:
+            img_base64 = base64.b64encode(img_data).decode()
+            img_src = f"data:image/png;base64,{img_base64}"
+        else:
+            img_src = "https://upload.wikimedia.org/wikipedia/commons/9/99/Sample_User_Icon.png"
+
+        st.markdown(
+            f"""
+            <div style="
+                display:flex;
+                justify-content:center;
+                align-items:center;
+                border:3px solid #00ff66;
+                border-radius:50%;
+                width:180px;
+                height:180px;
+                overflow:hidden;
+                box-shadow: 0 0 12px #00ff66;">
+                <img src="{img_src}" style="width:100%; height:100%; object-fit:cover;">
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # Upload new image
+        uploaded_img = st.file_uploader(
+            "Change Profile Image",
+            type=["png", "jpg", "jpeg"]
+        )
+
+        # Remove image button
+        if img_data:
+            if st.button("🗑 Remove Image"):
+                img_data = None  # remove current image
+                save_profile(st.session_state.username, full_name, bio, None)
+                st.success("Profile image removed!")
+                st.rerun()
+
+    # -------- PROFILE DETAILS --------
+    with col2:
+        new_name = st.text_input("Full Name", value=full_name)
+        new_bio = st.text_area("Bio", value=bio, height=140)
+
+        st.markdown(
+            """
+            <style>
+            .save-btn button {
+                background-color: #00ff66 !important;
+                color: black !important;
+                border-radius: 10px;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 10px 20px;
+                transition: 0.2s;
+            }
+            .save-btn button:hover {
+                transform: scale(1.05);
+                background-color: #00e65c !important;
+                box-shadow: 0 0 15px #00ff66;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
+        if st.button("💾 Save Profile"):
+            image_bytes = img_data
+            if uploaded_img:
+                image_bytes = uploaded_img.read()
+
+            save_profile(
+                st.session_state.username,
+                new_name,
+                new_bio,
+                image_bytes
+            )
+            st.success("Profile updated successfully 🎉")
+            st.rerun()
+
+    # -------- PROFILE METADATA --------
+    st.markdown(
+        f"""
+        <div style='margin-top:30px; padding:20px; border:2px solid #00ff66; border-radius:18px; background:rgba(17,17,17,0.85); box-shadow:0 0 20px #00ff66;'>
+            <h3 style='color:#00ff66;'>Account Information</h3>
+            <p style='color:white;'><strong>Username:</strong> {st.session_state.username}</p>
+            <p style='color:white;'><strong>Full Name:</strong> {new_name if new_name else 'N/A'}</p>
+            <p style='color:white;'><strong>Bio:</strong> {new_bio if new_bio else 'N/A'}</p>
+            <p style='color:#aaa;'>Account Type: Local Spotify App User</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+if page == "Liked Songs":
+
+    st.markdown(
+        "<h1 style='color:#00ff66;'>▶️ Liked Songs</h1>",
+        unsafe_allow_html=True
+    )
+
+    # Fetch liked songs
+    liked_songs = c.execute("""
+        SELECT track_id, track_name, artist
+        FROM liked_songs
+        WHERE username=?
+    """, (st.session_state.username,)).fetchall()
+
+    if not liked_songs:
+        st.info("You have no liked songs yet.")
+        st.stop()
+
+    # Map display name to track_id for selection
+    track_options = {f"{track_name} - {artist}": track_id for track_id, track_name, artist in liked_songs}
+
+    # Multi-select for removal
+    tracks_to_remove = st.multiselect(
+        "Select songs to remove from liked songs",
+        options=list(track_options.keys())
+    )
+
+    # Remove button
+    if st.button("❌ Unlike Selected Songs"):
+        if tracks_to_remove:
+            for track in tracks_to_remove:
+                track_id = track_options[track]
+                c.execute("""
+                    DELETE FROM liked_songs
+                    WHERE username=? AND track_id=?
+                """, (st.session_state.username, track_id))
+            conn.commit()
+            st.success(f"Removed {len(tracks_to_remove)} song(s) from Liked Songs")
+            st.rerun()
+        else:
+            st.warning("No songs selected to like.")
+
+    st.markdown("<h4 style='color:#00ff66;'>🎧 Your Liked Songs</h4>", unsafe_allow_html=True)
+
+    # Display playable tracks
+    for track_id, track_name, artist in liked_songs:
+        st.markdown(f"**{track_name} - {artist}**", unsafe_allow_html=True)
+        st.markdown(
+            spotify_player(track_id),
+            unsafe_allow_html=True
+        )
+
+
+if page == "Playlists":
+    st.markdown("<h1 style='color:#00ff66;'>🎶 My Playlists</h1>", unsafe_allow_html=True)
+
+    playlists = c.execute("""
+        SELECT DISTINCT playlist_name
+        FROM playlists
+        WHERE username=? AND playlist_name IS NOT NULL AND playlist_name != ''
+    """, (st.session_state.username,)).fetchall()
+
+    # Filter out any invalid entries just in case
+    playlists = [pl for pl in playlists if pl[0] and pl[0].strip() != ""]
+
+    # --- Create Playlist ---
+    st.markdown("<h3 style='color:#00ff66;'>➕ Create New Playlist</h3>", unsafe_allow_html=True)
+    new_pl_name = st.text_input("Playlist Name", key="new_playlist_input")
+    if st.button("Create Playlist"):
+        if new_pl_name.strip() != "":
+            # Insert dummy entry to create playlist structure
+            c.execute("""
+                INSERT OR IGNORE INTO playlists (username, playlist_name, track_id, track_name, artist, image)
+                VALUES (?, ?, '', '', '', '')
+            """, (st.session_state.username, new_pl_name))
+            conn.commit()
+            st.success(f"Playlist '{new_pl_name}' created!")
+            st.rerun()
+        else:
+            st.error("Playlist name cannot be empty.")
+
+    # --- Playlist Cards ---
+    if st.session_state.selected_playlist is None:
+        st.markdown("<div style='display:flex; flex-wrap:wrap; gap:15px; justify-content:center;'>", unsafe_allow_html=True)
+
+        # Number of columns per row
+        cols_per_row = 3
+        cols = st.columns(cols_per_row)
+
+        for i, pl in enumerate(playlists):
+            pl_name = pl[0]
+            col = cols[i % cols_per_row]  # Assign column cyclically
+            with col:
+                # Playlist card click
+                if st.button(f"🎵 {pl_name}", key=f"pl_card_{pl_name}", help="Click to open playlist"):
+                    st.session_state.selected_playlist = pl_name
+                    st.rerun()
+
+                # Playlist card UI (visual)
                 st.markdown(
-                    "<hr style='border:1px solid #00ff66; margin:30px 0;'>",
+                    f"""
+                    <div style="
+                        width:180px;
+                        height:180px;
+                        border:2px solid #00ff66;
+                        border-radius:18px;
+                        display:flex;
+                        flex-direction:column;
+                        align-items:center;
+                        justify-content:center;
+                        background:linear-gradient(135deg, #003300, #00cc66, #00994d);
+                        color:white;
+                        font-weight:bold;
+                        font-size:20px;
+                        text-align:center;
+                        box-shadow:0 0 15px #00ff66;
+                        cursor:pointer;
+                        margin-bottom:10px;
+                        ">
+                        🎵<br>{pl_name}
+                    </div>
+                    """,
                     unsafe_allow_html=True
                 )
+
+                # Delete playlist button
+                if st.button(f"🗑 Delete {pl_name}", key=f"delete_{pl_name}"):
+                    c.execute("""
+                        DELETE FROM playlists
+                        WHERE username=? AND playlist_name=?
+                    """, (st.session_state.username, pl_name))
+                    conn.commit()
+                    st.success(f"Playlist '{pl_name}' deleted!")
+                    st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Playlist Detail Page ---
+    # Fetch only valid songs (track_id not empty or None)
+    songs = c.execute("""
+        SELECT track_id, track_name, artist
+        FROM playlists
+        WHERE username=? AND playlist_name=? AND track_id IS NOT NULL AND track_id != ''
+    """, (st.session_state.username, st.session_state.selected_playlist)).fetchall()
+
+    if not songs:
+        st.info("No songs in this playlist.")
+    else:
+        # Map display name to track_id
+        track_options = {f"{track_name} - {artist}": track_id for track_id, track_name, artist in songs}
+
+        # Multi-select widget for removal
+        tracks_to_remove = st.multiselect(
+            "Select songs to remove",
+            options=list(track_options.keys())
+        )
+
+        # Display playable songs
+        st.markdown("<h4 style='color:#00ff66;'>🎧 Playlist Songs</h4>", unsafe_allow_html=True)
+        for track_id, track_name, artist in songs:
+            st.markdown(f"**{track_name} - {artist}**", unsafe_allow_html=True)
+            st.markdown(
+                spotify_player(track_id),
+                unsafe_allow_html=True
+            )
+
+        # Remove selected songs button
+        if st.button("❌ Remove Selected Songs"):
+            if tracks_to_remove:
+                for track in tracks_to_remove:
+                    track_id = track_options[track]
+                    # DELETE from playlists table instead of liked_songs
+                    c.execute("""
+                        DELETE FROM playlists
+                        WHERE username=? AND playlist_name=? AND track_id=?
+                    """, (st.session_state.username, st.session_state.selected_playlist, track_id))
+                conn.commit()
+                st.success(f"Removed {len(tracks_to_remove)} song(s) from '{st.session_state.selected_playlist}'")
+                st.rerun()
+            else:
+                st.warning("No songs selected to remove.")
+
+    if st.button("⬅ Back to Playlists"):
+        st.session_state.selected_playlist = None
+        st.rerun()
