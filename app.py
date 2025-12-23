@@ -775,8 +775,8 @@ with open(image_path, "rb") as f:
     b64 = base64.b64encode(data).decode()
 
 st.markdown(f"""
-<div style="text-align:left; margin-top:-150px; margin-bottom:-100px;">
-    <img src="data:image/jpeg;base64,{b64}" width="300">
+<div style="text-align:left; margin-top:-200px; margin-bottom:-100px;">
+    <img src="data:image/jpeg;base64,{b64}" width="400">
 </div>
 """, unsafe_allow_html=True)
 
@@ -1702,5 +1702,6 @@ if page == "Playlists":
     if st.button("⬅ Back to Playlists"):
         st.session_state.selected_playlist = None
         st.rerun()
+
 
 
