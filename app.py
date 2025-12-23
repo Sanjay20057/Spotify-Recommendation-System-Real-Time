@@ -768,7 +768,19 @@ def search_top_10(song_name):
 
 
 # UI STYLING (UNCHANGED)
-st.image("WhatsApp Image 2025-12-03 at 20.47.25_382aee0c.jpg", width=170)
+image_path = "WhatsApp Image 2025-12-03 at 20.47.25_382aee0c.jpg"
+
+with open(image_path, "rb") as f:
+    data = f.read()
+    b64 = base64.b64encode(data).decode()
+
+st.markdown(f"""
+<div style="text-align:left; margin-top:-30px;">
+    <img src="data:image/jpeg;base64,{b64}" width="170">
+</div>
+""", unsafe_allow_html=True)
+
+
 
 st.markdown("""
 <style>
@@ -1095,7 +1107,10 @@ ul[role="listbox"] li:hover {
 """, unsafe_allow_html=True)
 
 if page == "Search Music":
-    st.warning( "🎵 Only previews are available unless you are logged into Spotify Premium in this browser." )
+    st.warning(
+        "🎵 Only previews are available unless you are logged into Spotify Premium in this browser."
+    )
+
     # SEARCH INPUT
     st.write("### Search any Song, Album or Artist")
     song = st.text_input("Enter song, artist, or album:")
@@ -1687,5 +1702,3 @@ if page == "Playlists":
     if st.button("⬅ Back to Playlists"):
         st.session_state.selected_playlist = None
         st.rerun()
-
-
