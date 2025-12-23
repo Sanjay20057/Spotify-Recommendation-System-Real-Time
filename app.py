@@ -6,6 +6,33 @@ import base64
 import os
 import sqlite3
 import hashlib
+from streamlit_cookies_manager import EncryptedCookieManager
+import datetime
+
+# ---------------- COOKIE MANAGER ----------------
+cookies = EncryptedCookieManager(
+    prefix="spotify_clone_",
+    password="supersecretpassword123!"
+)
+
+if not cookies.ready():
+    st.stop()
+
+# ---------------- AUTO LOGIN FROM COOKIE ----------------
+logged_in_user = cookies.get("logged_in_user")
+login_expiry = cookies.get("login_expiry")
+
+if logged_in_user and login_expiry:
+    expiry_time = datetime.datetime.fromisoformat(login_expiry)
+    if datetime.datetime.now() < expiry_time:
+        st.session_state.logged_in = True
+        st.session_state.username = logged_in_user
+    else:
+        # Expired
+        cookies["logged_in_user"] = ""
+        cookies["login_expiry"] = ""
+        cookies.save()
+
 
 # ---------- MOBILE DETECTION ----------
 if "is_mobile" not in st.session_state:
@@ -19,9 +46,18 @@ c.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
-    password TEXT
+    password TEXT,
+    fav_singer TEXT
 )
 """)
+# ✅ ADD fav_singer column if it does not exist
+try:
+    c.execute("ALTER TABLE users ADD COLUMN fav_singer TEXT")
+    conn.commit()
+except sqlite3.OperationalError:
+    pass
+
+
 # ---------- LIKED SONGS ----------
 c.execute("""
 CREATE TABLE IF NOT EXISTS liked_songs (
@@ -62,56 +98,191 @@ conn.commit()
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-def signup_user(username, password):
+def signup_user(username, password, fav_singer):
     try:
         c.execute(
-            "INSERT INTO users (username, password) VALUES (?, ?)",
-            (username, hash_password(password))
+            "INSERT INTO users (username, password, fav_singer) VALUES (?, ?, ?)",
+            (
+                username.strip(),              # ✅ exact username
+                hash_password(password),
+                fav_singer.lower().strip()
+            )
         )
         conn.commit()
         return True
-    except:
+    except sqlite3.IntegrityError:
         return False
 
 def login_user(username, password):
     c.execute(
         "SELECT * FROM users WHERE username=? AND password=?",
-        (username, hash_password(password))
+        (username.strip(), hash_password(password))
     )
     return c.fetchone()
+
+def delete_user(username, password):
+    c.execute(
+        "SELECT * FROM users WHERE username=? AND password=?",
+        (username.strip(), hash_password(password))
+    )
+    user = c.fetchone()
+
+    if user:
+        c.execute("DELETE FROM users WHERE username=?", (username.strip(),))
+        conn.commit()
+        return True
+    return False
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
+if "forgot_password" not in st.session_state:
+    st.session_state.forgot_password = False
+
+if "allow_reset" not in st.session_state:
+    st.session_state.allow_reset = False
+
+# ---------------- SESSION STATE INITIALIZATION ----------------
+if "selected_playlist" not in st.session_state:
+    st.session_state.selected_playlist = None
+
+import streamlit as st
+import base64
+
+# ---------- LOAD LOCAL IMAGE ----------
+with open("Login_Background.jpeg", "rb") as f:  # your local file
+    data = f.read()
+encoded = base64.b64encode(data).decode()  # encode image to base64
+import streamlit as st
+import base64
+
+# ---------- LOAD LOCAL IMAGE ----------
+with open("Login_Background.jpeg", "rb") as f:  # your local file
+    data = f.read()
+encoded = base64.b64encode(data).decode()  # encode image to base64
+
+# ---------- APPLY AS FULL PAGE BACKGROUND ----------
+st.markdown(f"""
+<style>
+.stApp {{
+    background-image: url("data:image/jpeg;base64,{encoded}");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}}
+
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+
+/* Title */
+.login-card h1 {
+    color: #00ff66;
+    font-size: 32px;
+    margin-bottom: 25px;
+    text-shadow: 0 0 12px #00ff66;
+}
+
+/* Inputs */
+div[data-baseweb="input"] > div:first-child {
+    border: 2px solid #00ff66 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 0 8px #00ff66;
+    background-color: rgba(26, 26, 26, 0.8) !important;
+}
+div[data-baseweb="input"] input {
+    color: #00ff66 !important;
+    font-weight: 600 !important;
+    padding: 10px;
+}
+
+/* Buttons */
+.stButton>button {
+    background-color: #00ff66;
+    color: black;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 10px 20px;
+    transition: 0.2s;
+}
+.stButton>button:hover {
+    transform: scale(1.05);
+    background-color: #00e65c;
+}
+
+/* Radio buttons */
+[data-baseweb="radio"] > div > label {
+    color: #00ff66;
+    font-weight: bold;
+}
+
+/* Forgot password */
+.forgot-btn button {
+    background: none;
+    color: #00ff66;
+    border: none;
+    font-weight: bold;
+    text-decoration: underline;
+}
+.forgot-btn button:hover {
+    color: black;
+    background-color: #00ff66;
+    border-radius: 8px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------- LOGIN / SIGNUP ----------
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+
 if not st.session_state.logged_in:
     st.markdown('<div class="login-card">', unsafe_allow_html=True)
-    st.markdown("<h1>🎧 Welcome to Neon Spotify</h1>", unsafe_allow_html=True)
+    st.markdown("<h1>🎧 Welcome To Spotify Clone</h1>", unsafe_allow_html=True)
 
-    auth_mode = st.radio("Choose Action", ["Login", "Sign Up"], horizontal=True)
+    auth_mode = st.radio("Choose Action", ["Login", "Sign Up"], horizontal=True, key="auth_mode")
 
-    username = st.text_input("Username", placeholder="Enter username")
-    password = st.text_input("Password", type="password", placeholder="Enter password")
+    username = st.text_input("Username", placeholder="Enter username", key="login_username")
+    password = st.text_input("Password", type="password", placeholder="Enter password", key="login_password")
 
     if auth_mode == "Sign Up":
-        if st.button("Create Account"):
-            if signup_user(username, password):
-                st.success("Account created! Please login.")
+        fav_singer = st.text_input("Favorite Singer", placeholder="Used for password recovery", key="fav_singer")
+        if st.button("Create Account", key="signup_btn"):
+            if not fav_singer.strip():
+                st.error("Favorite singer required")
+            elif signup_user(username, password, fav_singer):
+                st.success("Account created! Switch to Login.")
             else:
-                st.error("Username already exists.")
-
-    if auth_mode == "Login":
-        if st.button("Login"):
+                st.error("Username already exists")
+    else:
+        if st.button("Login", key="login_btn"):
             user = login_user(username, password)
             if user:
                 st.session_state.logged_in = True
                 st.session_state.username = username
+
+                # Set cookie to expire in 1 day
+                expire_time = datetime.datetime.now() + datetime.timedelta(days=1)
+                cookies["logged_in_user"] = username
+                cookies["login_expiry"] = expire_time.isoformat()
+                cookies.save()
+
                 st.rerun()
             else:
                 st.error("Invalid username or password")
 
+        # Forgot password button
+        st.markdown('<div class="forgot-btn">', unsafe_allow_html=True)
+        if st.button("Forgot Password?", key="forgot_btn"):
+            st.session_state.forgot_password = True
+        st.markdown('</div>', unsafe_allow_html=True)
+
     st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
-
 
 def get_sidebar_profile(username):
     c.execute(
@@ -220,7 +391,12 @@ page = st.sidebar.radio(
 
 if st.sidebar.button("Logout"):
     st.session_state.logged_in = False
+    st.session_state.username = None
+    cookies["logged_in_user"] = ""
+    cookies["login_expiry"] = ""
+    cookies.save()
     st.rerun()
+
 
 def like_song(username, track):
     c.execute("""
@@ -385,16 +561,11 @@ def get_clean_artist_result(query):
     # 4️⃣ Fallback — highest popularity
     return sorted(artists, key=lambda x: x["popularity"], reverse=True)[0]
 
-# Initialize session state variables
-if "selected_playlist" not in st.session_state:
-    st.session_state.selected_playlist = None
-
 if "album_expand" not in st.session_state:
     st.session_state.album_expand = {}
 
 if "search_clicked" not in st.session_state:
     st.session_state.search_clicked = False
-
 
 st.session_state.is_mobile = st.get_option("browser.gatherUsageStats") is None
 
@@ -1184,7 +1355,7 @@ if page == "Search Music":
 if page == "Profile":
 
     st.markdown(
-        f"<h1 style='color:#00ff66; text-align:center;'>👤 {st.session_state.username}</h1>",
+        f"<h1 style='color:#00ff66; text-align:Left;'>👤 {st.session_state.username}</h1>",
         unsafe_allow_html=True
     )
 
@@ -1291,7 +1462,42 @@ if page == "Profile":
         """,
         unsafe_allow_html=True
     )
+    # ---------------- DELETE ACCOUNT ----------------
+    st.markdown("---")
 
+    # initialize state
+    if "show_delete" not in st.session_state:
+        st.session_state.show_delete = False
+
+    # STEP 1: show only button
+    if not st.session_state.show_delete:
+        if st.button("❌ Delete Account"):
+            st.session_state.show_delete = True
+
+    # STEP 2: show confirmation form after click
+    else:
+        st.markdown("### ⚠️ Delete Account Permanently")
+
+        del_username = st.text_input("Confirm Username")
+        del_password = st.text_input("Confirm Password", type="password")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("Delete Permanently"):
+                if delete_user(del_username, del_password):
+                    st.success("Account deleted permanently")
+
+                    st.session_state.logged_in = False
+                    st.session_state.username = None
+                    st.session_state.show_delete = False
+                    st.rerun()
+                else:
+                    st.error("Incorrect username or password")
+
+        with col1:
+            if st.button("Cancel"):
+                st.session_state.show_delete = False
 
 if page == "Liked Songs":
 
@@ -1344,6 +1550,8 @@ if page == "Liked Songs":
             spotify_player(track_id),
             unsafe_allow_html=True
         )
+
+
 
 
 if page == "Playlists":
@@ -1478,4 +1686,3 @@ if page == "Playlists":
     if st.button("⬅ Back to Playlists"):
         st.session_state.selected_playlist = None
         st.rerun()
-
