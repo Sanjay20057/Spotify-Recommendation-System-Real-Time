@@ -9,9 +9,6 @@ import hashlib
 from streamlit_cookies_manager import EncryptedCookieManager
 import datetime
 
-st.warning(
-    "🎵 Only previews are available unless you are logged into Spotify Premium in this browser."
-)
 # ---------------- COOKIE MANAGER ----------------
 cookies = EncryptedCookieManager(
     prefix="spotify_clone_",
@@ -1098,6 +1095,7 @@ ul[role="listbox"] li:hover {
 """, unsafe_allow_html=True)
 
 if page == "Search Music":
+    st.warning( "🎵 Only previews are available unless you are logged into Spotify Premium in this browser." )
     # SEARCH INPUT
     st.write("### Search any Song, Album or Artist")
     song = st.text_input("Enter song, artist, or album:")
@@ -1689,4 +1687,5 @@ if page == "Playlists":
     if st.button("⬅ Back to Playlists"):
         st.session_state.selected_playlist = None
         st.rerun()
+
 
