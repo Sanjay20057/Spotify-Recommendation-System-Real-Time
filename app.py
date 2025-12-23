@@ -9,6 +9,9 @@ import hashlib
 from streamlit_cookies_manager import EncryptedCookieManager
 import datetime
 
+st.warning(
+    "🎵 Only previews are available unless you are logged into Spotify Premium in this browser."
+)
 # ---------------- COOKIE MANAGER ----------------
 cookies = EncryptedCookieManager(
     prefix="spotify_clone_",
@@ -1686,3 +1689,4 @@ if page == "Playlists":
     if st.button("⬅ Back to Playlists"):
         st.session_state.selected_playlist = None
         st.rerun()
+
