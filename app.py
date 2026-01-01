@@ -39,7 +39,10 @@ if "is_mobile" not in st.session_state:
     st.session_state.is_mobile = st.get_option("browser.gatherUsageStats") is None
 
 # ------------------ DATABASE ------------------
-conn = sqlite3.connect("users.db", check_same_thread=False)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "users.db")
+
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 c = conn.cursor()
 
 c.execute("""
@@ -1702,6 +1705,7 @@ if page == "Playlists":
     if st.button("⬅ Back to Playlists"):
         st.session_state.selected_playlist = None
         st.rerun()
+
 
 
 
